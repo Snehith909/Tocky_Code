@@ -1,0 +1,27 @@
+# Dependency directories
+node_modules/
+backend/.venv/
+backend/venv/
+backend/__pycache__/
+*.pyc
+
+# Distribution and build outputs
+out/
+dist/
+*.vsix
+
+# Environment variables & secrets
+.env
+*.pem
+*.key
+
+# Local databases and caches
+*.sqlite
+*.db
+.cache/
+.codeguard/
+
+# System and IDE
+.DS_Store
+Thumbs.db
+.vscode-test/

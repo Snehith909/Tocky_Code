@@ -1,0 +1,5 @@
+# Core backend runs with Python Standard Library (3.9+)
+# Optional enhancements for testing and extended scanning:
+# bandit>=1.7.5
+# semgrep>=1.38.0
+# pytest>=7.4.0

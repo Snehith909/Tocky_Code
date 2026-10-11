@@ -1,0 +1,163 @@
+{
+  "name": "codeguard-ai",
+  "displayName": "CodeGuard AI",
+  "description": "Multi-language VS Code security plugin for vulnerability detection, AI remediation, and independent verification",
+  "version": "0.1.0",
+  "publisher": "codeguard",
+  "engines": {
+    "vscode": "^1.85.0"
+  },
+  "categories": [
+    "Programming Languages",
+    "Linters",
+    "Security"
+  ],
+  "main": "./out/extension.js",
+  "activationEvents": [
+    "onStartupFinished"
+  ],
+  "contributes": {
+    "viewsContainers": {
+      "activitybar": [
+        {
+          "id": "codeguard-explorer",
+          "title": "CodeGuard AI",
+          "icon": "media/shield.svg"
+        }
+      ]
+    },
+    "views": {
+      "codeguard-explorer": [
+        {
+          "id": "codeguard.findingsView",
+          "name": "Security Findings",
+          "type": "tree"
+        },
+        {
+          "id": "codeguard.statusView",
+          "name": "Verification & Metrics",
+          "type": "webview"
+        }
+      ]
+    },
+    "commands": [
+      {
+        "command": "codeguard.scanWorkspace",
+        "title": "CodeGuard: Scan Workspace",
+        "category": "CodeGuard",
+        "icon": "$(search)"
+      },
+      {
+        "command": "codeguard.scanFile",
+        "title": "CodeGuard: Scan Current File",
+        "category": "CodeGuard",
+        "icon": "$(file-code)"
+      },
+      {
+        "command": "codeguard.explainFinding",
+        "title": "CodeGuard: Explain Finding",
+        "category": "CodeGuard"
+      },
+      {
+        "command": "codeguard.proposeFix",
+        "title": "CodeGuard: Propose Fix",
+        "category": "CodeGuard",
+        "icon": "$(tools)"
+      },
+      {
+        "command": "codeguard.verifyPatch",
+        "title": "CodeGuard: Verify Patch",
+        "category": "CodeGuard",
+        "icon": "$(shield)"
+      },
+      {
+        "command": "codeguard.openReport",
+        "title": "CodeGuard: Open Latest Report",
+        "category": "CodeGuard"
+      },
+      {
+        "command": "codeguard.showMetrics",
+        "title": "CodeGuard: Show Metrics",
+        "category": "CodeGuard"
+      },
+      {
+        "command": "codeguard.applyApprovedPatch",
+        "title": "CodeGuard: Approve and Apply Patch",
+        "category": "CodeGuard",
+        "icon": "$(check)"
+      },
+      {
+        "command": "codeguard.rejectPatch",
+        "title": "CodeGuard: Reject Proposed Patch",
+        "category": "CodeGuard",
+        "icon": "$(close)"
+      }
+    ],
+    "menus": {
+      "view/title": [
+        {
+          "command": "codeguard.scanWorkspace",
+          "when": "view == codeguard.findingsView",
+          "group": "navigation"
+        },
+        {
+          "command": "codeguard.scanFile",
+          "when": "view == codeguard.findingsView",
+          "group": "navigation"
+        }
+      ],
+      "view/item/context": [
+        {
+          "command": "codeguard.proposeFix",
+          "when": "view == codeguard.findingsView && viewItem == finding",
+          "group": "inline"
+        },
+        {
+          "command": "codeguard.explainFinding",
+          "when": "view == codeguard.findingsView && viewItem == finding",
+          "group": "inline"
+        }
+      ]
+    },
+    "configuration": {
+      "title": "CodeGuard AI",
+      "properties": {
+        "codeguard.pythonPath": {
+          "type": "string",
+          "default": "python",
+          "description": "Path to Python executable running the CodeGuard backend"
+        },
+        "codeguard.llmProvider": {
+          "type": "string",
+          "enum": [
+            "mock",
+            "gemini",
+            "openai"
+          ],
+          "default": "mock",
+          "description": "LLM provider used for patch proposals (mock for offline deterministic testing)"
+        },
+        "codeguard.useDocker": {
+          "type": "boolean",
+          "default": false,
+          "description": "Use Docker container for verification test execution"
+        },
+        "codeguard.verificationTimeout": {
+          "type": "number",
+          "default": 30,
+          "description": "Timeout in seconds for verification executions"
+        }
+      }
+    }
+  },
+  "scripts": {
+    "vscode:prepublish": "npm run compile",
+    "compile": "tsc -p ./",
+    "watch": "tsc -watch -p ./"
+  },
+  "devDependencies": {
+    "@types/node": "^20.11.0",
+    "@types/vscode": "^1.85.0",
+    "typescript": "^5.3.3"
+  }
+}
