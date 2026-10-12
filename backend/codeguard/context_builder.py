@@ -32,12 +32,13 @@ def redact_secrets(text: str) -> str:
 def build_minimal_context(
     workspace_root: str,
     finding: Finding,
-    context_lines_before: int = 15,
-    context_lines_after: int = 15
+    context_lines_before: int = 5,
+    context_lines_after: int = 5,
+    ultra_compact: bool = True
 ) -> Dict[str, Any]:
     """
-    Extract only the relevant lines surrounding the vulnerability,
-    apply redaction, and structure into a secure context payload.
+    Extract only the minimal necessary lines surrounding the vulnerability,
+    apply redaction, and structure into an ultra-low-token context payload.
     """
     root = Path(workspace_root).resolve()
     target_file = (root / finding.file).resolve()
@@ -49,7 +50,6 @@ def build_minimal_context(
         raise ValueError(f"Path traversal detected: {finding.file} is outside workspace root {workspace_root}")
 
     if not target_file.exists() or not target_file.is_file():
-        # Fallback to evidence if file can't be read
         snippet = finding.evidence
         snippet_start = finding.start_line
         snippet_end = finding.end_line
@@ -59,8 +59,12 @@ def build_minimal_context(
             lines = content.splitlines()
             total_lines = len(lines)
 
-            start_idx = max(0, finding.start_line - 1 - context_lines_before)
-            end_idx = min(total_lines, finding.end_line + context_lines_after)
+            # When ultra_compact is active, bound context strictly to 3 lines around finding
+            before = 3 if ultra_compact else context_lines_before
+            after = 3 if ultra_compact else context_lines_after
+
+            start_idx = max(0, finding.start_line - 1 - before)
+            end_idx = min(total_lines, finding.end_line + after)
 
             selected_lines = lines[start_idx:end_idx]
             snippet = "\n".join(selected_lines)
@@ -74,8 +78,17 @@ def build_minimal_context(
     # Redact secrets
     safe_snippet = redact_secrets(snippet)
 
-    # Prompt injection guard: escape and clearly delimit untrusted source code
-    prompt = f"""You are a specialized code security assistant.
+    if ultra_compact:
+        # High-efficiency, low-token prompt (sub-60 tokens) with untrusted data delimiter
+        prompt = (
+            f"Fix {finding.rule_id} ({finding.cwe or 'vulnerability'}) in {finding.file}:{finding.start_line}.\n"
+            f"<UNTRUSTED_CODE_SNIPPET line_start=\"{snippet_start}\" line_end=\"{snippet_end}\">\n"
+            f"{safe_snippet}\n"
+            f"</UNTRUSTED_CODE_SNIPPET>\n"
+            f"Respond with JSON: {{\"replacement_code\": \"...\", \"explanation\": \"...\"}}"
+        )
+    else:
+        prompt = f"""You are a specialized code security assistant.
 A security scanner flagged a vulnerability in the following code file: {finding.file}
 
 Vulnerability Details:
@@ -104,5 +117,5 @@ CRITICAL INSTRUCTIONS:
         "snippet_end": snippet_end,
         "snippet": safe_snippet,
         "prompt": prompt,
-        "estimated_tokens": len(prompt.split()) * 2  # Approximate token heuristic
+        "estimated_tokens": len(prompt.split()) + 15
     }

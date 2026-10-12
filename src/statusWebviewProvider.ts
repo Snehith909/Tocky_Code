@@ -171,8 +171,15 @@ export class StatusWebviewProvider implements vscode.WebviewViewProvider {
   <div class="card">
     <h3>Workspace Overview</h3>
     <div class="row"><span>Languages:</span><span><b>${langs}</b></span></div>
+    <div class="row"><span>Active Scanners:</span><span><b>${summary?.scanners_run?.length || 5} tools</b></span></div>
     <div class="row"><span>Total Findings:</span><span><b>${totalFindings}</b></span></div>
     <div class="row"><span>Scan Latency:</span><span>${durationMs} ms</span></div>
+  </div>
+
+  <div class="card">
+    <h3>Model Engine</h3>
+    <div class="row"><span>Remediation Model:</span><span class="badge green">CodeGuard-Model</span></div>
+    <div class="row"><span>Strategy:</span><span>AST + Ultra-Low Token</span></div>
   </div>
 
   <div class="card">

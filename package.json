@@ -130,12 +130,19 @@
         "codeguard.llmProvider": {
           "type": "string",
           "enum": [
-            "mock",
+            "codeguard-model",
+            "custom",
             "gemini",
-            "openai"
+            "openai",
+            "mock"
           ],
-          "default": "mock",
-          "description": "LLM provider used for patch proposals (mock for offline deterministic testing)"
+          "default": "codeguard-model",
+          "description": "LLM used for fix proposals: 'codeguard-model' (CodeGuard's specialized fast, low-token engine), 'custom' (local/private endpoint), or external APIs"
+        },
+        "codeguard.customLlmEndpoint": {
+          "type": "string",
+          "default": "http://localhost:11434/api/generate",
+          "description": "HTTP endpoint URL for custom/local security LLM (e.g. Ollama or private server)"
         },
         "codeguard.useDocker": {
           "type": "boolean",

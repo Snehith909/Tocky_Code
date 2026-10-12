@@ -148,16 +148,21 @@ class VerificationEvaluator:
 
             # 5. Security Rescan
             rescan_scanner = BuiltinRulesScanner()
+            original_findings = rescan_scanner.scan(str(orig_target_file))
+            original_fingerprints = {f.fingerprint for f in original_findings}
+
             new_findings = rescan_scanner.scan(str(dest_file))
 
             # Check if original vulnerability rule is still triggered
             original_still_present = any(
-                f.rule_id == finding.rule_id or f.cwe == finding.cwe
+                (f.rule_id == finding.rule_id or (finding.cwe and f.cwe == finding.cwe))
+                and abs(f.start_line - finding.start_line) <= 3
                 for f in new_findings
             )
-            # Check if new critical/high findings were created
+            # Check if new critical/high findings were created that were not already present
             new_critical_introduced = any(
                 f.severity in [Severity.CRITICAL.value, Severity.HIGH.value]
+                and f.fingerprint not in original_fingerprints
                 and f.rule_id != finding.rule_id
                 for f in new_findings
             )

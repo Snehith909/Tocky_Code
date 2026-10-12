@@ -25,3 +25,5 @@ dist/
 .DS_Store
 Thumbs.db
 .vscode-test/
+codeguard-ai/
+backend/test_vulnerable.py

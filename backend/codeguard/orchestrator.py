@@ -16,6 +16,8 @@ from codeguard.scanners.semgrep import SemgrepAdapter
 from codeguard.scanners.bandit import BanditAdapter
 from codeguard.scanners.eslint import ESLintAdapter
 from codeguard.scanners.gitleaks import GitleaksAdapter
+from codeguard.scanners.dependency_audit import DependencyAuditAdapter
+from codeguard.scanners.cppcheck import CppcheckAdapter
 from codeguard.scanners.builtin_rules import BuiltinRulesScanner
 from codeguard.findings import normalize_and_deduplicate
 from codeguard.triage import prioritize_findings
@@ -30,6 +32,8 @@ class ScanOrchestrator:
             BanditAdapter(),
             ESLintAdapter(),
             GitleaksAdapter(),
+            DependencyAuditAdapter(),
+            CppcheckAdapter(),
             BuiltinRulesScanner(),
         ]
 

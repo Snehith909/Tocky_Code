@@ -128,8 +128,8 @@ def main():
     p_fix.add_argument("--workspace", required=True, help="Workspace root directory")
     p_fix.add_argument("--finding-json", help="Finding serialized JSON")
     p_fix.add_argument("--finding-file", help="Path to JSON file containing finding")
-    p_fix.add_argument("--provider", default="mock", help="LLM provider (mock, gemini)")
-    p_fix.set_defaults(func=cmd_fix if "cmd_fix" in globals() else cmd_propose_fix)
+    p_fix.add_argument("--provider", default="codeguard-model", help="LLM provider (codeguard-model, custom, gemini)")
+    p_fix.set_defaults(func=cmd_propose_fix)
 
     # verify
     p_ver = subparsers.add_parser("verify", help="Verify patch proposal in isolated sandbox")
