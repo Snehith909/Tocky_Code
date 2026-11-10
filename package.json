@@ -1,9 +1,9 @@
 {
-  "name": "codeguard-ai",
-  "displayName": "CodeGuard AI",
+  "name": "tocky-code",
+  "displayName": "Tocky Code",
   "description": "Multi-language VS Code security plugin for vulnerability detection, AI remediation, and independent verification",
   "version": "0.1.0",
-  "publisher": "codeguard",
+  "publisher": "tocky",
   "engines": {
     "vscode": "^1.85.0"
   },
@@ -12,6 +12,10 @@
     "Linters",
     "Security"
   ],
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/tocky/tocky-code"
+  },
   "main": "./out/extension.js",
   "activationEvents": [
     "onStartupFinished"
@@ -21,7 +25,7 @@
       "activitybar": [
         {
           "id": "codeguard-explorer",
-          "title": "CodeGuard AI",
+          "title": "Tocky Code",
           "icon": "media/shield.svg"
         }
       ]
@@ -43,54 +47,83 @@
     "commands": [
       {
         "command": "codeguard.scanWorkspace",
-        "title": "CodeGuard: Scan Workspace",
-        "category": "CodeGuard",
+        "title": "Scan Workspace",
+        "category": "Tocky Code",
         "icon": "$(search)"
       },
       {
         "command": "codeguard.scanFile",
-        "title": "CodeGuard: Scan Current File",
-        "category": "CodeGuard",
+        "title": "Scan Current File",
+        "category": "Tocky Code",
         "icon": "$(file-code)"
       },
       {
         "command": "codeguard.explainFinding",
-        "title": "CodeGuard: Explain Finding",
-        "category": "CodeGuard"
+        "title": "Explain Finding",
+        "category": "Tocky Code"
       },
       {
         "command": "codeguard.proposeFix",
-        "title": "CodeGuard: Propose Fix",
-        "category": "CodeGuard",
+        "title": "Propose Fix",
+        "category": "Tocky Code",
         "icon": "$(tools)"
       },
       {
         "command": "codeguard.verifyPatch",
-        "title": "CodeGuard: Verify Patch",
-        "category": "CodeGuard",
+        "title": "Verify Patch",
+        "category": "Tocky Code",
         "icon": "$(shield)"
       },
       {
         "command": "codeguard.openReport",
-        "title": "CodeGuard: Open Latest Report",
-        "category": "CodeGuard"
+        "title": "Open Latest Report",
+        "category": "Tocky Code"
       },
       {
         "command": "codeguard.showMetrics",
-        "title": "CodeGuard: Show Metrics",
-        "category": "CodeGuard"
+        "title": "Show Metrics",
+        "category": "Tocky Code"
       },
       {
         "command": "codeguard.applyApprovedPatch",
-        "title": "CodeGuard: Approve and Apply Patch",
-        "category": "CodeGuard",
+        "title": "Approve and Apply Patch",
+        "category": "Tocky Code",
         "icon": "$(check)"
       },
       {
         "command": "codeguard.rejectPatch",
-        "title": "CodeGuard: Reject Proposed Patch",
-        "category": "CodeGuard",
+        "title": "Reject Proposed Patch",
+        "category": "Tocky Code",
         "icon": "$(close)"
+      },
+      {
+        "command": "codeguard.setApiKey",
+        "title": "Set LLM API Key (Quick)",
+        "category": "Tocky Code",
+        "icon": "$(key)"
+      },
+      {
+        "command": "codeguard.configureApiKey",
+        "title": "Add / Update API Key",
+        "category": "Tocky Code",
+        "icon": "$(key)"
+      },
+      {
+        "command": "codeguard.addApiKey",
+        "title": "Add API Key",
+        "category": "Tocky Code",
+        "icon": "$(key)"
+      },
+      {
+        "command": "codeguard.onApiKeyUpdated",
+        "title": "Fix Vulnerabilities with Updated API Key",
+        "category": "Tocky Code",
+        "icon": "$(zap)"
+      },
+      {
+        "command": "codeguard.autoFixWorkspace",
+        "title": "Auto Scan, Fix and Verify with Copilot",
+        "category": "Tocky Code"
       }
     ],
     "menus": {
@@ -98,12 +131,22 @@
         {
           "command": "codeguard.scanWorkspace",
           "when": "view == codeguard.findingsView",
-          "group": "navigation"
+          "group": "navigation@1"
         },
         {
           "command": "codeguard.scanFile",
           "when": "view == codeguard.findingsView",
-          "group": "navigation"
+          "group": "navigation@2"
+        },
+        {
+          "command": "codeguard.configureApiKey",
+          "when": "view == codeguard.findingsView || view == codeguard.statusView",
+          "group": "navigation@3"
+        },
+        {
+          "command": "codeguard.addApiKey",
+          "when": "view == codeguard.statusView",
+          "group": "navigation@4"
         }
       ],
       "view/item/context": [
@@ -120,7 +163,7 @@
       ]
     },
     "configuration": {
-      "title": "CodeGuard AI",
+      "title": "Tocky Code",
       "properties": {
         "codeguard.pythonPath": {
           "type": "string",
@@ -130,14 +173,25 @@
         "codeguard.llmProvider": {
           "type": "string",
           "enum": [
+            "copilot",
             "codeguard-model",
-            "custom",
             "gemini",
             "openai",
+            "custom",
             "mock"
           ],
-          "default": "codeguard-model",
-          "description": "LLM used for fix proposals: 'codeguard-model' (CodeGuard's specialized fast, low-token engine), 'custom' (local/private endpoint), or external APIs"
+          "default": "copilot",
+          "description": "LLM used for fix proposals: 'copilot' (GitHub Copilot - no API key needed), 'gemini' (Google Gemini API), 'openai' (OpenAI API), 'codeguard-model' (built-in specialized fast engine), or 'custom' (Ollama/private server)"
+        },
+        "codeguard.apiKey": {
+          "type": "string",
+          "default": "",
+          "description": "API Key for your chosen cloud LLM provider (e.g. Google Gemini API Key or OpenAI API Key)"
+        },
+        "codeguard.model": {
+          "type": "string",
+          "default": "gemini-2.5-flash",
+          "description": "LLM model identifier to use (e.g. 'gemini-2.5-flash', 'gemini-1.5-flash', 'gemini-1.5-pro', or 'gpt-4o-mini')"
         },
         "codeguard.customLlmEndpoint": {
           "type": "string",
@@ -160,11 +214,13 @@
   "scripts": {
     "vscode:prepublish": "npm run compile",
     "compile": "tsc -p ./",
-    "watch": "tsc -watch -p ./"
+    "watch": "tsc -watch -p ./",
+    "package": "vsce package --no-git-tag-version"
   },
   "devDependencies": {
     "@types/node": "^20.11.0",
     "@types/vscode": "^1.85.0",
+    "@vscode/vsce": "^4.0.0",
     "typescript": "^5.3.3"
   }
 }

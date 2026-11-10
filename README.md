@@ -170,6 +170,7 @@ Record tool, rule, and model versions so experiments can be reproduced.
 -   [Architecture](ARCHITECTURE.md)
 -   [Technical and UX Design](DESIGN.md)
 -   [Project Memory and Agent Instructions](MEMORY.md)
+-   [Security and scanner evaluation report](SECURITY_FIX_REPORT.md)
 
 ## License
 

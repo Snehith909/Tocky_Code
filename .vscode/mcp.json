@@ -1,0 +1,13 @@
+{
+  "mcpServers": {
+    "tocky-code": {
+      "command": "python",
+      "args": [
+        "backend/mcp_server/server.py"
+      ],
+      "env": {
+        "TOCKY_WORKSPACE": "${workspaceFolder}"
+      }
+    }
+  }
+}

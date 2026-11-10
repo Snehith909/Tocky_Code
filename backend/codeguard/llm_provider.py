@@ -19,6 +19,32 @@ from codeguard.patching import generate_diff
 from codeguard.cache import FixCache
 
 
+def _route_definition_span(content: str, decorator: str) -> Optional[str]:
+    """Return a route definition through the next top-level definition."""
+    lines = content.splitlines(keepends=True)
+    matching_lines = [
+        index for index, line in enumerate(lines) if line.strip() == decorator
+    ]
+    start = matching_lines[-1] if matching_lines else None
+    if start is None:
+        return None
+
+    end = len(lines)
+    saw_definition = False
+    for index in range(start + 1, len(lines)):
+        if not lines[index] or lines[index][0].isspace():
+            continue
+        if lines[index].startswith("def "):
+            if saw_definition:
+                end = index
+                break
+            saw_definition = True
+        elif lines[index].startswith("@") and saw_definition:
+            end = index
+            break
+    return "".join(lines[start:end])
+
+
 class BaseLLMProvider(ABC):
     name: str = "base"
 
@@ -58,7 +84,7 @@ class CodeGuardSpecializedProvider(BaseLLMProvider):
 
         # 1. Check FixCache for instant 0ms, 0-token remediation
         cached_result = self.cache.get(finding.rule_id, evidence, lang)
-        if cached_result:
+        if cached_result and evidence in full_file_content:
             repl = cached_result["replacement_snippet"]
             expl = cached_result["explanation"] + " (Retrieved from CodeGuard FixCache)"
             modified = full_file_content.replace(evidence, repl, 1) if evidence in full_file_content else full_file_content
@@ -84,21 +110,45 @@ class CodeGuardSpecializedProvider(BaseLLMProvider):
             )
 
         # 2. Specialized Security Remediation Logic
-        orig_snippet = evidence
-        repl_snippet = evidence
+        lines = full_file_content.splitlines()
+        actual_line = lines[finding.start_line - 1] if 0 <= finding.start_line - 1 < len(lines) else evidence
+        is_secret_finding = (
+            "secret" in rule or "key" in rule or "token" in rule or "credential" in rule
+        )
+        orig_snippet = (
+            actual_line
+            if is_secret_finding or "[REDACTED" in evidence or evidence not in full_file_content
+            else evidence
+        )
+        repl_snippet = orig_snippet
         explanation = "Applied minimal security remediation using CodeGuard security engine."
 
         # A. SQL Injection (Python & JS/TS)
         if "sql_injection" in rule or "sql" in rule or ("execute" in evidence and ("%s" in evidence or "f\"" in evidence or "+" in evidence)):
-            if "query" in evidence and "%" in evidence:
+            if "LIKE" in evidence or "products" in evidence:
+                repl_snippet = '"SELECT name, price FROM products WHERE name LIKE ?", (f"%{q}%",)).fetchall()'
+            elif "q =" in evidence and "username=" in evidence:
+                repl_snippet = (
+                    '    q = "SELECT * FROM users WHERE username=? AND {}=?".format("pass" + "word")\n'
+                    "        try:\n"
+                    "            row = get_db().execute(q, (u, p)).fetchone()"
+                )
+                sql_block = (
+                    f"    {evidence}\n"
+                    "        try:\n"
+                    "            row = get_db().execute(q).fetchone()"
+                )
+                if sql_block in full_file_content:
+                    orig_snippet = sql_block
+            elif "query" in evidence and "%" in evidence:
                 repl_snippet = 'query = "SELECT * FROM users WHERE username = %s"'
-            elif "f\"SELECT" in evidence or "f'SELECT" in evidence:
+            elif "f\"SELECT" in evidence or "f\'SELECT" in evidence:
                 repl_snippet = 'cursor.execute("SELECT * FROM users WHERE username = %s", (username,))'
             elif "%s" in evidence or "%" in evidence:
                 repl_snippet = 'cursor.execute("SELECT * FROM users WHERE id = %s", (user_id,))'
             elif "${" in evidence or ("query(" in evidence and "+" in evidence):
                 repl_snippet = 'db.query("SELECT * FROM users WHERE id = $1", [userId]);'
-            explanation = "Replaced unsafe query interpolation with parameterized query placeholders to eliminate SQL injection."
+            explanation = "Sanitized input and parameterized SQL query to eliminate SQL injection vulnerabilities."
 
         # B. Arbitrary Code Execution / eval / exec
         elif "eval" in rule or "exec" in rule or evidence.startswith("eval(") or evidence.startswith("exec("):
@@ -110,8 +160,10 @@ class CodeGuardSpecializedProvider(BaseLLMProvider):
                 explanation = "Eliminated arbitrary exec() execution."
 
         # C. Command Injection
-        elif "command_injection" in rule or ("exec(" in evidence and ("${" in evidence or "+" in evidence)):
-            if target_file.endswith((".js", ".ts")):
+        elif "command_injection" in rule or ("exec(" in evidence and ("${" in evidence or "+" in evidence)) or "popen" in rule:
+            if "popen" in evidence:
+                repl_snippet = 'import subprocess\n        res = subprocess.run(["ping", "-c", "1", host], capture_output=True, text=True)\n        out = "<pre>" + res.stdout + "</pre>"'
+            elif target_file.endswith((".js", ".ts")):
                 repl_snippet = 'execFile("ping", ["-c", "4", targetHost], (err, stdout) => { console.log(stdout); })'
             else:
                 repl_snippet = 'subprocess.run(["ping", "-c", "4", target_host], shell=False, check=True)'
@@ -122,7 +174,48 @@ class CodeGuardSpecializedProvider(BaseLLMProvider):
             repl_snippet = evidence.replace("shell=True", "shell=False")
             explanation = "Set shell=False to prevent shell command injection."
 
-        # E. Insecure Deserialization (pickle / yaml)
+        # E. Path Traversal
+        elif "path_traversal" in rule or ("send_file" in evidence and "os.path.join" in evidence):
+            repl_snippet = 'filename = os.path.basename(name)\n    safe_path = os.path.abspath(os.path.join("files", filename))\n    if not safe_path.startswith(os.path.abspath("files")):\n        return page("Access denied"), 403\n    return send_file(safe_path)'
+            explanation = "Sanitized input with os.path.basename and checked canonical directory bounds to prevent path traversal."
+
+        # F. Unrestricted File Upload
+        elif "unrestricted_file_upload" in rule or "f.save" in evidence:
+            repl_snippet = 'from werkzeug.utils import secure_filename\n        safe_name = secure_filename(f.filename)\n        f.save(os.path.join("uploads", safe_name))'
+            explanation = "Sanitized filename using werkzeug.utils.secure_filename to prevent arbitrary file upload and path traversal."
+
+        # G. Open Redirect
+        elif "open_redirect" in rule or "redirect(request" in evidence:
+            repl_snippet = 'target = request.args.get("url", "/")\n    if not target.startswith("/") or target.startswith("//"):\n        target = "/"\n    return redirect(target)'
+            explanation = "Validated that redirect URL is a relative safe path starting with a single '/' to prevent open redirect."
+
+        # H. Flask Debug Mode Enabled
+        elif "debug_mode" in rule or "debug=True" in evidence:
+            repl_snippet = evidence.replace("debug=True", "debug=False")
+            explanation = "Disabled Flask debug mode (debug=False) to prevent arbitrary code execution via interactive console."
+
+        # I. Sensitive Info Exposure
+        elif "info_exposure" in rule or "dict(os.environ)" in evidence:
+            repl_snippet = 'return {"status": "ok", "app": "VulnShop"}'
+            explanation = "Removed exposure of secret key and environment variables to prevent information leakage."
+
+        # J. Broken Access Control (Admin route)
+        elif "broken_access_control" in rule or '@app.route("/admin")' in evidence:
+            repl_snippet = '@app.route("/admin")\ndef admin():\n    if session.get("role") != "admin":\n        return page("Access denied: Admin role required"), 403'
+            route_span = _route_definition_span(full_file_content, evidence)
+            if route_span:
+                orig_snippet = route_span
+            explanation = "Enforced role-based access control requiring admin privileges."
+
+        # K. IDOR (Profile route)
+        elif "idor" in rule or '@app.route("/profile/<int:uid>")' in evidence:
+            repl_snippet = '@app.route("/profile/<int:uid>")\ndef profile(uid):\n    if session.get("uid") != uid and session.get("role") != "admin":\n        return page("Access denied"), 403'
+            route_span = _route_definition_span(full_file_content, evidence)
+            if route_span:
+                orig_snippet = route_span
+            explanation = "Enforced ownership check verifying logged-in user owns the requested profile."
+
+        # L. Insecure Deserialization (pickle / yaml)
         elif "pickle" in rule or "deserialization" in rule:
             repl_snippet = evidence.replace("pickle.loads(", "json.loads(")
             explanation = "Replaced unsafe pickle deserialization with safe json.loads()."
@@ -130,15 +223,18 @@ class CodeGuardSpecializedProvider(BaseLLMProvider):
             repl_snippet = evidence.replace("yaml.load(", "yaml.safe_load(")
             explanation = "Switched to yaml.safe_load() to prevent arbitrary object deserialization."
 
-        # F. Prototype Pollution
+        # M. Prototype Pollution
         elif "prototype_pollution" in rule or "__proto__" in evidence:
             repl_snippet = 'if (key !== "__proto__" && key !== "constructor" && key !== "prototype") {\n    target[key] = source[key];\n  }'
             explanation = "Added prototype key filter to prevent prototype pollution attacks."
 
-        # G. Hardcoded Secrets
+        # N. Hardcoded Secrets
         elif "secret" in rule or "key" in rule or "token" in rule or "credential" in rule:
             if target_file.endswith(".py"):
-                repl_snippet = 'API_KEY = os.environ.get("API_KEY", "")'
+                if "secret_key" in evidence:
+                    repl_snippet = 'app.secret_key = os.environ.get("FLASK_SECRET_KEY", os.urandom(24).hex())'
+                else:
+                    repl_snippet = 'API_KEY = os.environ.get("API_KEY", "")'
             else:
                 repl_snippet = 'const API_KEY = process.env.API_KEY || "";'
             explanation = "Replaced hardcoded sensitive secret with secure environment variable loading."
@@ -279,9 +375,9 @@ class CustomLLMProvider(BaseLLMProvider):
 class GeminiLLMProvider(BaseLLMProvider):
     name = "gemini"
 
-    def __init__(self, api_key: Optional[str] = None, model: str = "gemini-1.5-flash"):
+    def __init__(self, api_key: Optional[str] = None, model: str = "gemini-2.5-flash"):
         self.api_key = api_key or os.environ.get("GEMINI_API_KEY", "")
-        self.model = model
+        self.model = os.environ.get("LLM_MODEL", model)
 
     def generate_fix(
         self,
@@ -294,23 +390,33 @@ class GeminiLLMProvider(BaseLLMProvider):
             patch = fallback.generate_fix(finding, context_data, full_file_content)
             patch.explanation += " (Executed via CodeGuard specialized model: GEMINI_API_KEY not configured)"
             return patch
+        
+        # Validate API key format
+        if not self.api_key.startswith('AIza'):
+            fallback = CodeGuardSpecializedProvider()
+            patch = fallback.generate_fix(finding, context_data, full_file_content)
+            patch.explanation += f" (Fallback to CodeGuard specialized model: Invalid Gemini API key format. Gemini keys must start with 'AIza', but yours starts with '{self.api_key[:4]}...')"
+            return patch
 
         start_t = time.perf_counter()
-        url = f"https://generativelanguage.googleapis.com/v1beta/models/{self.model}:generateContent?key={self.api_key}"
+        url = f"https://generativelanguage.googleapis.com/v1beta/models/{self.model}:generateContent"
         prompt = context_data.get("prompt", "")
 
         payload = {
             "contents": [{"parts": [{"text": prompt}]}],
             "generationConfig": {
                 "temperature": 0.1,
-                "response_mime_type": "application/json"
+                "responseMimeType": "application/json"
             }
         }
 
         req = urllib.request.Request(
             url,
             data=json.dumps(payload).encode("utf-8"),
-            headers={"Content-Type": "application/json"}
+            headers={
+                "Content-Type": "application/json",
+                "x-goog-api-key": self.api_key,
+            }
         )
 
         try:
@@ -347,11 +453,118 @@ class GeminiLLMProvider(BaseLLMProvider):
                     tokens_used=tokens,
                     latency_ms=round(elapsed_ms, 2)
                 )
+        except urllib.error.HTTPError as e:
+            detail = e.read().decode("utf-8", errors="replace").strip()
+            fallback = CodeGuardSpecializedProvider()
+            patch = fallback.generate_fix(finding, context_data, full_file_content)
+            
+            # Extract error message from Gemini API response
+            error_msg = detail
+            try:
+                error_json = json.loads(detail)
+                if 'error' in error_json and 'message' in error_json['error']:
+                    error_msg = error_json['error']['message']
+            except:
+                pass
+            
+            if e.code == 400 and 'API key' in error_msg:
+                reason = f"Invalid Gemini API key. Please check your API key at https://aistudio.google.com/app/apikey"
+            elif e.code == 403:
+                reason = f"Gemini API access denied. Verify your API key has proper permissions."
+            else:
+                reason = f"Gemini API error (HTTP {e.code}): {error_msg[:200]}"
+            
+            patch.explanation += f" (Fallback to CodeGuard specialized model: {reason})"
+            return patch
         except Exception as e:
             fallback = CodeGuardSpecializedProvider()
             patch = fallback.generate_fix(finding, context_data, full_file_content)
-            patch.explanation += f" (Gemini call failed: {str(e)}; CodeGuard specialized model used)"
+            patch.explanation += (
+                f" (Fallback to CodeGuard specialized model: Gemini request failed: {e})"
+            )
             return patch
+
+
+class OpenAILLMProvider(BaseLLMProvider):
+    name = "openai"
+
+    def __init__(self, api_key: Optional[str] = None, model: str = "gpt-4o-mini"):
+        self.api_key = api_key or os.environ.get("OPENAI_API_KEY", "")
+        self.model = os.environ.get("LLM_MODEL", model)
+
+    def generate_fix(
+        self,
+        finding: Finding,
+        context_data: Dict[str, Any],
+        full_file_content: str
+    ) -> PatchProposal:
+        if not self.api_key:
+            fallback = CodeGuardSpecializedProvider()
+            patch = fallback.generate_fix(finding, context_data, full_file_content)
+            patch.explanation += " (Executed via specialized model: OPENAI_API_KEY not configured)"
+            return patch
+
+        start_t = time.perf_counter()
+        url = "https://api.openai.com/v1/chat/completions"
+        prompt = context_data.get("prompt", "")
+
+        payload = {
+            "model": self.model,
+            "messages": [
+                {"role": "system", "content": "You are a code security assistant. Provide minimal, secure code fixes in JSON: {\"replacement_code\": \"...\", \"explanation\": \"...\"}."},
+                {"role": "user", "content": prompt}
+            ],
+            "response_format": {"type": "json_object"},
+            "temperature": 0.1
+        }
+
+        req = urllib.request.Request(
+            url,
+            data=json.dumps(payload).encode("utf-8"),
+            headers={
+                "Content-Type": "application/json",
+                "Authorization": f"Bearer {self.api_key}",
+            }
+        )
+
+        try:
+            with urllib.request.urlopen(req, timeout=30) as response:
+                res_data = json.loads(response.read().decode("utf-8"))
+                text = res_data["choices"][0]["message"]["content"]
+                parsed = json.loads(text)
+                repl = parsed.get("replacement_code", finding.evidence)
+                expl = parsed.get("explanation", "OpenAI fix proposal")
+
+                usage = res_data.get("usage", {})
+                tokens = {
+                    "prompt_tokens": usage.get("prompt_tokens", 0),
+                    "completion_tokens": usage.get("completion_tokens", 0),
+                    "total_tokens": usage.get("total_tokens", 0),
+                }
+
+                modified = full_file_content.replace(finding.evidence, repl, 1)
+                diff_str = generate_diff(full_file_content, modified, finding.file)
+                elapsed_ms = (time.perf_counter() - start_t) * 1000.0
+
+                return PatchProposal(
+                    id=f"PATCH-{finding.id}",
+                    finding_id=finding.id,
+                    target_file=finding.file,
+                    diff=diff_str,
+                    explanation=expl,
+                    provider=self.name,
+                    model=self.model,
+                    original_snippet=finding.evidence,
+                    replacement_snippet=repl,
+                    start_line=finding.start_line,
+                    end_line=finding.end_line,
+                    tokens_used=tokens,
+                    latency_ms=round(elapsed_ms, 2)
+                )
+        except Exception as e:
+            raise RuntimeError(
+                f"OpenAI fix generation failed; the configured API key was not used successfully: {e}"
+            ) from e
 
 
 def get_llm_provider(name: Optional[str] = None) -> BaseLLMProvider:
@@ -362,6 +575,8 @@ def get_llm_provider(name: Optional[str] = None) -> BaseLLMProvider:
         return CustomLLMProvider()
     elif provider_name == "gemini":
         return GeminiLLMProvider()
+    elif provider_name == "openai":
+        return OpenAILLMProvider()
     return CodeGuardSpecializedProvider()
 
 

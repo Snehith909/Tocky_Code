@@ -14,7 +14,7 @@ from codeguard.models import Finding, Severity, FindingStatus
 
 # Secret detection patterns
 SECRET_PATTERNS = [
-    (r'(?i)(api[_-]?key|secret|password|passwd|auth[_-]?token|access[_-]?token|private[_-]?key)\s*[:=]\s*["\']([a-zA-Z0-9_\-\.\/+=]{12,})["\']', "builtin.secret.hardcoded_credential", "CWE-798", Severity.HIGH),
+    (r'(?i)(api[_-]?key|secret(?:[_-]?key)?|password|passwd|auth[_-]?token|access[_-]?token|private[_-]?key)\s*[:=]\s*["\']([a-zA-Z0-9_\-\.\/+=]{12,})["\']', "builtin.secret.hardcoded_credential", "CWE-798", Severity.HIGH),
     (r'(?i)AIza[0-9A-Za-z-_]{35}', "builtin.secret.google_api_key", "CWE-798", Severity.CRITICAL),
     (r'(?i)gh[pous]_[0-9a-zA-Z]{36}', "builtin.secret.github_token", "CWE-798", Severity.CRITICAL),
     (r'(?i)sk-[a-zA-Z0-9]{32,}', "builtin.secret.openai_api_key", "CWE-798", Severity.CRITICAL),
@@ -29,9 +29,19 @@ PYTHON_PATTERNS = [
     (r'((?:query|sql|stmt)\s*=\s*["\'].*?%s.*?["\']\s*%)', "builtin.py.sql_injection_percent", "SQL query constructed with string formatting; risk of SQL injection", "CWE-89", Severity.HIGH),
     (r'((?:query|sql|stmt)\s*=\s*f["\'].*?\{.*?\}[\'"])', "builtin.py.sql_injection_fstring", "SQL query constructed with f-string; risk of SQL injection", "CWE-89", Severity.HIGH),
     (r'((?:query|sql|stmt)\s*=\s*["\'].*?["\']\s*\+)', "builtin.py.sql_injection_concat", "SQL query constructed with string concatenation; risk of SQL injection", "CWE-89", Severity.HIGH),
-    (r'(eval\s*\([^)]+\))', "builtin.py.unsafe_eval", "Use of eval() detected; arbitrary code execution vulnerability", "CWE-95", Severity.CRITICAL),
+    (r'(q\s*=\s*f["\']\s*(?:SELECT|INSERT|UPDATE|DELETE)\b.*?\{.*?\}[\'"])', "builtin.py.sql_injection_fstring", "SQL query constructed with f-string; risk of SQL injection", "CWE-89", Severity.HIGH),
+    (r'^\s*f(["\'])\s*(?:SELECT|INSERT|UPDATE|DELETE)\b.*?\{.*?\}.*?\1', "builtin.py.sql_injection_fstring", "SQL query constructed with f-string; risk of SQL injection", "CWE-89", Severity.HIGH),
+    (r'(?<![\w.])(eval\s*\([^)]+\))', "builtin.py.unsafe_eval", "Use of eval() detected; arbitrary code execution vulnerability", "CWE-95", Severity.CRITICAL),
     (r'(exec\s*\([^)]+\))', "builtin.py.unsafe_exec", "Use of exec() detected; arbitrary code execution vulnerability", "CWE-95", Severity.CRITICAL),
     (r'(subprocess\.(?:call|run|Popen)\s*\([^)]*shell\s*=\s*True[^)]*\))', "builtin.py.subprocess_shell_true", "Subprocess invoked with shell=True; command injection risk", "CWE-78", Severity.HIGH),
+    (r'(os\.popen\s*\([^)]*\))', "builtin.py.command_injection_popen", "os.popen executes a shell command and may allow command injection", "CWE-78", Severity.CRITICAL),
+    (r'(send_file\s*\(\s*os\.path\.join\s*\([^)]*\)\s*\))', "builtin.py.path_traversal", "send_file with joined user path parameter enables directory/path traversal", "CWE-22", Severity.HIGH),
+    (r'(\.save\s*\(\s*os\.path\.join\s*\([^,]+,\s*[a-zA-Z0-9_]+\.filename\s*\)\s*\))', "builtin.py.unrestricted_file_upload", "Uploaded file saved using raw filename without secure_filename validation", "CWE-434", Severity.HIGH),
+    (r'(redirect\s*\(\s*request\.(?:args|form)\.get\s*\(\s*["\']url["\'][^)]*\)\s*\))', "builtin.py.open_redirect", "Unvalidated redirect target from request parameter enables open redirect attacks", "CWE-601", Severity.MEDIUM),
+    (r'(app\.run\s*\([^)]*debug\s*=\s*True[^)]*\))', "builtin.py.debug_mode_enabled", "Flask application run with debug=True exposes interactive debugger and code execution risk", "CWE-489", Severity.HIGH),
+    (r'(dict\s*\(\s*os\.environ\s*\))', "builtin.py.info_exposure_env", "Exposure of full environment variables in web response leaks sensitive secrets", "CWE-200", Severity.HIGH),
+    (r'(@app\.route\s*\(\s*["\']/admin["\']\))', "builtin.py.broken_access_control_admin", "Administrative route lacks role check or authentication enforcement", "CWE-285", Severity.HIGH),
+    (r'(@app\.route\s*\(\s*["\']/profile/<int:uid>["\']\))', "builtin.py.idor_profile", "Profile route lacks ownership validation (Insecure Direct Object Reference)", "CWE-639", Severity.HIGH),
     (r'(pickle\.loads?\s*\([^)]+\))', "builtin.py.unsafe_deserialization", "Use of pickle loads/load; arbitrary object deserialization vulnerability", "CWE-502", Severity.HIGH),
     (r'(yaml\.load\s*\([^)]*(?!Loader=SafeLoader)[^)]*\))', "builtin.py.unsafe_yaml_load", "Unsafe yaml.load() without SafeLoader; arbitrary code execution risk", "CWE-20", Severity.HIGH),
 ]
@@ -42,7 +52,7 @@ JS_TS_PATTERNS = [
     (r'(\.query\s*\(\s*["\'].*?\+.*?\))', "builtin.js.sql_injection_concat", "SQL query built with string concatenation", "CWE-89", Severity.HIGH),
     (r'(exec\s*\(\s*[`\'"].*?\$\{.*?\}[\'"`]\s*[\),])', "builtin.js.command_injection", "child_process.exec invoked with template literal interpolation; command injection risk", "CWE-78", Severity.CRITICAL),
     (r'(exec\s*\(\s*["\'].*?\+\s*[a-zA-Z0-9_]+)', "builtin.js.command_injection_concat", "child_process.exec with string concatenation; command injection risk", "CWE-78", Severity.CRITICAL),
-    (r'(eval\s*\([^)]+\))', "builtin.js.unsafe_eval", "eval() allows arbitrary code execution", "CWE-95", Severity.CRITICAL),
+    (r'(?<![\w.])(eval\s*\([^)]+\))', "builtin.js.unsafe_eval", "eval() allows arbitrary code execution", "CWE-95", Severity.CRITICAL),
     (r'(__proto__\s*=)', "builtin.js.prototype_pollution", "Direct assignment to __proto__ may cause prototype pollution", "CWE-1321", Severity.HIGH),
     (r'(document\.write\s*\([^)]+\))', "builtin.js.xss_document_write", "document.write can introduce DOM Cross-Site Scripting (XSS)", "CWE-79", Severity.MEDIUM),
     (r'(innerHTML\s*=\s*[^;]+)', "builtin.js.xss_inner_html", "Direct assignment to innerHTML can lead to Cross-Site Scripting (XSS)", "CWE-79", Severity.MEDIUM),
@@ -155,6 +165,34 @@ class BuiltinRulesScanner(BaseScannerAdapter):
                     for line_idx, line in enumerate(lines, start=1):
                         match = re.search(pattern, line)
                         if match:
+                            if rule_id in {
+                                "builtin.py.broken_access_control_admin",
+                                "builtin.py.idor_profile",
+                            }:
+                                route_end = len(lines)
+                                saw_definition = False
+                                for route_index in range(line_idx, len(lines)):
+                                    route_line = lines[route_index]
+                                    if not route_line or route_line[0].isspace():
+                                        continue
+                                    if route_line.startswith("def "):
+                                        if saw_definition:
+                                            route_end = route_index
+                                            break
+                                        saw_definition = True
+                                    elif route_line.startswith("@") and saw_definition:
+                                        route_end = route_index
+                                        break
+                                route_lines = lines[line_idx - 1:route_end]
+                                route_body = "\n".join(route_lines)
+                                if (
+                                    rule_id == "builtin.py.broken_access_control_admin"
+                                    and 'session.get("role") != "admin"' in route_body
+                                ) or (
+                                    rule_id == "builtin.py.idor_profile"
+                                    and 'session.get("uid") != uid' in route_body
+                                ):
+                                    continue
                             findings.append(Finding(
                                 id=f"CG-PY-{counter:04d}",
                                 tool=self.name,

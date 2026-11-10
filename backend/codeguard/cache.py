@@ -12,6 +12,8 @@ from pathlib import Path
 
 
 class FixCache:
+    CACHE_VERSION = "4"
+
     def __init__(self, cache_file: str = ".codeguard/fix_cache.json"):
         self.cache_file = Path(cache_file)
         self.cache_file.parent.mkdir(parents=True, exist_ok=True)
@@ -34,7 +36,7 @@ class FixCache:
             pass
 
     def compute_key(self, rule_id: str, snippet: str, language: str) -> str:
-        raw = f"{rule_id}:{language}:{snippet.strip()}"
+        raw = f"{self.CACHE_VERSION}:{rule_id}:{language}:{snippet.strip()}"
         return hashlib.sha256(raw.encode("utf-8")).hexdigest()
 
     def get(self, rule_id: str, snippet: str, language: str) -> Optional[Dict[str, Any]]:

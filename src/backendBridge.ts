@@ -32,14 +32,51 @@ export class BackendBridge {
   private async executeCli(args: string[]): Promise<string> {
     const pythonExe = this.getPythonPath();
     const backendDir = this.getBackendDir();
+    const config = vscode.workspace.getConfiguration('codeguard');
+    const apiKey = config.get<string>('apiKey', '').trim();
+    const customEndpoint = config.get<string>('customLlmEndpoint', '').trim();
+    const model = config.get<string>('model', '').trim();
 
     return new Promise((resolve, reject) => {
       const fullArgs = ['-m', 'codeguard.cli', ...args];
-      const env = {
-        ...process.env,
+      const env: Record<string, string> = {
+        ...process.env as Record<string, string>,
         PYTHONPATH: backendDir,
         PYTHONIOENCODING: 'utf-8',
       };
+
+      if (apiKey) {
+        env['GEMINI_API_KEY'] = apiKey;
+        env['OPENAI_API_KEY'] = apiKey;
+      }
+      if (customEndpoint) {
+        env['CODEGUARD_CUSTOM_ENDPOINT'] = customEndpoint;
+      }
+      if (model) {
+        env['LLM_MODEL'] = model;
+      }
+
+      // Also load from workspace .env file (written by the API Key panel)
+      try {
+        const fs = require('fs') as typeof import('fs');
+        const envFilePath = path.join(backendDir, '..', '.env');
+        if (fs.existsSync(envFilePath)) {
+          const envContent = fs.readFileSync(envFilePath, 'utf-8');
+          for (const line of envContent.split('\n')) {
+            const trimmed = line.trim();
+            if (!trimmed || trimmed.startsWith('#')) { continue; }
+            const eqIdx = trimmed.indexOf('=');
+            if (eqIdx > 0) {
+              const k = trimmed.substring(0, eqIdx).trim();
+              const v = trimmed.substring(eqIdx + 1).trim();
+              // VS Code settings take priority over .env
+              if (k && v && !env[k]) {
+                env[k] = v;
+              }
+            }
+          }
+        }
+      } catch (_) { /* ignore .env load errors */ }
 
       const proc = cp.spawn(pythonExe, fullArgs, {
         cwd: backendDir,
@@ -83,7 +120,7 @@ export class BackendBridge {
     provider?: string
   ): Promise<PatchProposal> {
     const config = vscode.workspace.getConfiguration('codeguard');
-    const selectedProvider = provider || config.get<string>('llmProvider', 'mock');
+    const selectedProvider = provider || config.get<string>('llmProvider', 'gemini');
 
     const raw = await this.executeCli([
       'propose-fix',

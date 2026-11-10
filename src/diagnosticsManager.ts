@@ -39,7 +39,7 @@ export class DiagnosticsManager implements vscode.CodeActionProvider {
 
       const diag = new vscode.Diagnostic(
         range,
-        `[CodeGuard AI: ${f.rule_id}] ${f.message}`,
+        `[Tocky Code: ${f.rule_id}] ${f.message}`,
         severity
       );
       diag.source = f.tool;
@@ -88,7 +88,7 @@ export class DiagnosticsManager implements vscode.CodeActionProvider {
         if (finding) {
           // Action 1: Propose Fix
           const fixAction = new vscode.CodeAction(
-            `CodeGuard: Propose Minimal Fix for ${finding.rule_id}`,
+            `Tocky Code: Propose Minimal Fix for ${finding.rule_id}`,
             vscode.CodeActionKind.QuickFix
           );
           fixAction.command = {
@@ -102,7 +102,7 @@ export class DiagnosticsManager implements vscode.CodeActionProvider {
 
           // Action 2: Explain Finding
           const explainAction = new vscode.CodeAction(
-            `CodeGuard: Explain Finding Details`,
+            `Tocky Code: Explain Finding Details`,
             vscode.CodeActionKind.Empty
           );
           explainAction.command = {

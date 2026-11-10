@@ -64,13 +64,13 @@ export class DiffManager {
       'vscode.diff',
       originalFileUri,
       virtualUri,
-      `CodeGuard Fix Review: ${path.basename(patch.target_file)} (Original ↔ Proposed Fix)`,
+      `Tocky Code Fix Review: ${path.basename(patch.target_file)} (Original ↔ Proposed Fix)`,
       { preview: true }
     );
 
     // Show prompt with explicit Approve / Verify / Reject options
     const choice = await vscode.window.showInformationMessage(
-      `CodeGuard AI proposed fix for ${finding.rule_id}. Explanation: ${patch.explanation}`,
+      `Tocky Code proposed fix for ${finding.rule_id}. Explanation: ${patch.explanation}`,
       'Verify Fix in Sandbox',
       'Approve & Apply',
       'Reject'
@@ -104,12 +104,22 @@ export class DiffManager {
       patch.status = 'APPROVED';
 
       vscode.window.showInformationMessage(
-        `[CodeGuard AI] Patch successfully applied to ${patch.target_file}.`
+        `[Tocky Code] Patch successfully applied to ${patch.target_file}.`
       );
       return true;
     } catch (err: any) {
       vscode.window.showErrorMessage(`Failed to write file ${patch.target_file}: ${err.message}`);
       return false;
     }
+  }
+
+  public getLatestPatch(): PatchProposal | undefined {
+    const patches = Array.from(this.activePatches.values());
+    return patches.length > 0 ? patches[patches.length - 1].patch : undefined;
+  }
+
+  public rejectPatch(patch: PatchProposal): void {
+    patch.status = 'REJECTED';
+    this.activePatches.delete(patch.id);
   }
 }
